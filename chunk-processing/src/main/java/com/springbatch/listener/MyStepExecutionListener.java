@@ -1,4 +1,4 @@
-package com.springbatch.demo.listener;
+package com.springbatch.listener;
 
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepExecution;

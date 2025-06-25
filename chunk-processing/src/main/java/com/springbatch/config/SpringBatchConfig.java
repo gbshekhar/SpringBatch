@@ -1,7 +1,7 @@
-package com.springbatch.demo.config;
+package com.springbatch.config;
 
-import com.springbatch.demo.listener.MyStepExecutionListener;
-import decider.MyJobExecutionDecider;
+import com.springbatch.listener.MyStepExecutionListener;
+import com.springbatch.decider.MyJobExecutionDecider;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.StepContribution;

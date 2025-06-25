@@ -1,4 +1,4 @@
-package com.springbatch.demo;
+package com.springbatch;
 
 
 import org.springframework.boot.SpringApplication;
