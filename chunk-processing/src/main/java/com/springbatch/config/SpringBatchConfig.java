@@ -1,123 +1,129 @@
 package com.springbatch.config;
 
-import com.springbatch.listener.MyStepExecutionListener;
-import com.springbatch.decider.MyJobExecutionDecider;
+import com.springbatch.domain.Product;
+import com.springbatch.domain.ProductFieldSetMapper;
+import com.springbatch.domain.ProductRowMapper;
+import com.springbatch.reader.ProductNameItemReader;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
-import org.springframework.batch.core.StepContribution;
-import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.job.builder.JobBuilder;
-import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.core.step.tasklet.Tasklet;
-import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.batch.item.Chunk;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JdbcCursorItemReader;
+import org.springframework.batch.item.database.JdbcPagingItemReader;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.mapping.DefaultLineMapper;
+import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import javax.sql.DataSource;
+import java.util.List;
 
 @Configuration
 public class SpringBatchConfig {
 
+    @Autowired
+    DataSource dataSource;
+
+    @Bean
+    public ItemReader<String> itemReader(){
+        List<String> productList = List.of("Product1", "Product2", "Product3", "Product4");
+        return new ProductNameItemReader(productList);
+    }
+
+    @Bean
+    public ItemReader<Product> flatFileItemReader(){
+        FlatFileItemReader<Product> flatFileItemReader = new FlatFileItemReader<>();
+        flatFileItemReader.setLinesToSkip(1);
+        flatFileItemReader.setResource(new ClassPathResource("/data/Product_Details.csv"));
+
+        DefaultLineMapper<Product> lineMapper = new DefaultLineMapper<>();
+
+        DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
+        lineTokenizer.setNames("product_id", "product_name", "product_category", "product_price");
+
+        lineMapper.setLineTokenizer(lineTokenizer);
+        lineMapper.setFieldSetMapper(new ProductFieldSetMapper());
+
+        flatFileItemReader.setLineMapper(lineMapper);
+        return  flatFileItemReader;
+    }
+
+    @Bean
+    public ItemReader<Product> jdbcCursorItemReader(){
+        JdbcCursorItemReader<Product> itemReader = new JdbcCursorItemReader<>();
+        itemReader.setDataSource(dataSource);
+        itemReader.setSql("select * from product_details order by product_id;");
+        itemReader.setRowMapper(new ProductRowMapper());
+        return itemReader;
+    }
+
+    @Bean
+    public ItemReader<Product> jdbcPagingItemReader() throws Exception {
+        JdbcPagingItemReader<Product> itemReader = new JdbcPagingItemReader<>();
+        itemReader.setDataSource(dataSource);
+
+        SqlPagingQueryProviderFactoryBean factory = new SqlPagingQueryProviderFactoryBean();
+        factory.setDataSource(dataSource);
+        factory.setSelectClause("select product_id, product_name, product_category, product_price");
+        factory.setFromClause("from product_details");
+        factory.setSortKey("product_id");
+
+        itemReader.setQueryProvider(factory.getObject());
+        itemReader.setRowMapper(new ProductRowMapper());
+        itemReader.setPageSize(2);
+        return itemReader;
+    }
+
     //Sequential Flow Job
-    //@Bean
-//    public Job firstSequenceFlowJob(JobRepository jobRepository, PlatformTransactionManager transactionManager, Step firstStep, Step secondStep, Step thirdStep){
-//        return new JobBuilder("firstSequenceFlowJob", jobRepository)
-//                .preventRestart()
-//                .start(firstStep)
-//                .next(secondStep)
-//                .next(thirdStep)
+    @Bean
+    public Job firstJob(JobRepository jobRepository, PlatformTransactionManager transactionManager, Step firstStep){
+        return new JobBuilder("firstSequenceFlowJob", jobRepository)
+                .preventRestart()
+                .start(firstStep)
+                .build();
+    }
+
+//    @Bean
+//    @Qualifier("firstStep")
+//    public Step firstStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
+//        return new StepBuilder("Step1", jobRepository)
+//                .<String, String>chunk(2, transactionManager)
+//                .reader(itemReader())
+//                .writer(new ItemWriter<String>() {
+//                    @Override
+//                    public void write(Chunk<? extends String> chunk) throws Exception {
+//                        System.out.println("Chunk Processing Started");
+//                        chunk.getItems().forEach(System.out::println);
+//                        System.out.println("Chunk Processing Ended");
+//                    }
+//                })
 //                .build();
 //    }
-
-    //Conditional Flow Job
-    @Bean
-    public Job firstConditionalFlowJob(JobRepository jobRepository, PlatformTransactionManager transactionManager, Step firstStep,
-                        Step secondStep, Step thirdStep){
-        return new JobBuilder("firstConditionalFlowJob", jobRepository)
-                .start(firstStep(jobRepository, transactionManager))
-                .on("COMPLETED").to(secondStep(jobRepository, transactionManager))
-                .from(secondStep(jobRepository, transactionManager)).on("TEST_STATUS").to(thirdStep(jobRepository, transactionManager))
-                .from(secondStep(jobRepository, transactionManager)).on("*").to(fourthStep(jobRepository, transactionManager))
-                .end()
-                .build();
-    }
-
-    @Bean
-    public Job secondConditionalFlowJob(JobRepository jobRepository, PlatformTransactionManager transactionManager, Step firstStep,
-                                       Step secondStep, Step thirdStep){
-        return new JobBuilder("secondConditionalFlowJob", jobRepository)
-                .start(firstStep(jobRepository, transactionManager))
-                .on("COMPLETED").to(myJobExecutionDecider())
-                .on("TEST_STATUS").to(secondStep(jobRepository, transactionManager))
-                .from(myJobExecutionDecider()).on("*").to(thirdStep(jobRepository, transactionManager))
-                .end()
-                .build();
-    }
-
-    @Bean
-    public StepExecutionListener myStepExecutionListener(){
-        return new MyStepExecutionListener();
-    }
-
-    @Bean
-    public JobExecutionDecider myJobExecutionDecider(){
-        return new MyJobExecutionDecider();
-    }
 
     @Bean
     @Qualifier("firstStep")
     public Step firstStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
-        return new StepBuilder("Step1", jobRepository).tasklet(new Tasklet() {
-            @Override
-            public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-                System.out.println("Step1 Executed");
-                return RepeatStatus.FINISHED;
-            }
-        }, transactionManager).build();
-    }
-
-    @Bean
-    @Qualifier("secondStep")
-    public Step secondStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
-        return new StepBuilder("Step2", jobRepository).tasklet(new Tasklet() {
-            @Override
-            public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) throws Exception {
-                System.out.println("Step2 Executed");
-                boolean throwException = false;
-                if(throwException){
-                    throw new Exception("Raise Exception");
-                }
-                return RepeatStatus.FINISHED;
-            }
-        }, transactionManager)
-                .listener(myStepExecutionListener())
+        return new StepBuilder("Step1", jobRepository)
+                .<Product, Product>chunk(2, transactionManager)
+                .reader(jdbcCursorItemReader())
+                .writer(new ItemWriter<Product>() {
+                    @Override
+                    public void write(Chunk<? extends Product> chunk) throws Exception {
+                        System.out.println("Chunk Processing Started");
+                        chunk.getItems().forEach(System.out::println);
+                        System.out.println("Chunk Processing Ended");
+                    }
+                })
                 .build();
-    }
-
-    @Bean
-    @Qualifier("thirdStep")
-    public Step thirdStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
-        return new StepBuilder("Step3", jobRepository).tasklet(new Tasklet() {
-            @Override
-            public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-                System.out.println("Step3 Executed");
-                return RepeatStatus.FINISHED;
-            }
-        }, transactionManager).build();
-    }
-
-    @Bean
-    @Qualifier("fourthStep")
-    public Step fourthStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
-        return new StepBuilder("Step4", jobRepository).tasklet(new Tasklet() {
-            @Override
-            public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
-                System.out.println("Step4 Executed");
-                return RepeatStatus.FINISHED;
-            }
-        }, transactionManager).build();
     }
 }

@@ -23,7 +23,7 @@ public class CustomJobLaunchController {
     private JobLauncher jobLauncher;
 
     @Autowired
-    @Qualifier("secondConditionalFlowJob")
+    @Qualifier("firstJob")
     private Job job;
 
     @GetMapping("/launchJob/{id}")
