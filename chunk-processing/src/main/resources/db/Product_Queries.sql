@@ -5,3 +5,6 @@ INSERT INTO product_details VALUES (1, "GooglePixel", "Mobile", 15000);
 INSERT INTO product_details VALUES (2, "Iphone", "tablet", 1000);
 INSERT INTO product_details VALUES (3, "Samsung", "Mobile", 18000);
 INSERT INTO product_details VALUES (4,"sony", "TV", 12000);
+
+CREATE TABLE PRODUCT_DETAILS_OUTPUT (PRODUCT_ID INT,
+PRODUCT_NAME VARCHAR(100), PRODUCT_CATEGORY VARCHAR(100), PRODUCT_PRICE INT);
