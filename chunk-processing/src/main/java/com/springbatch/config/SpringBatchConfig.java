@@ -1,16 +1,16 @@
 package com.springbatch.config;
 
-import com.springbatch.domain.Product;
-import com.springbatch.domain.ProductFieldSetMapper;
-import com.springbatch.domain.ProductItemPreparedStatementSetter;
-import com.springbatch.domain.ProductRowMapper;
+import com.springbatch.domain.*;
+import com.springbatch.processor.FilterProductItemProcessor;
+import com.springbatch.processor.TransformMyOSProductItemProcessor;
+import com.springbatch.processor.TransformMyProductItemProcessor;
 import com.springbatch.reader.ProductNameItemReader;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.Chunk;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider;
@@ -24,6 +24,9 @@ import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
+import org.springframework.batch.item.support.CompositeItemProcessor;
+import org.springframework.batch.item.validator.BeanValidatingItemProcessor;
+import org.springframework.batch.item.validator.ValidatingItemProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +36,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -117,6 +121,57 @@ public class SpringBatchConfig {
         return jdbcBatchItemWriter;
     }
 
+    @Bean
+    public JdbcBatchItemWriter<OSProduct> jdbcBatchItemWriter_osproduct(){
+        JdbcBatchItemWriter<OSProduct> jdbcBatchItemWriter = new JdbcBatchItemWriter<>();
+        jdbcBatchItemWriter.setDataSource(dataSource);
+        jdbcBatchItemWriter.setSql("insert into OS_PRODUCT_DETAILS values (:productId, :productName, :productCategory, :productPrice, :taxPercent, :sku, :shippingRate)");
+        jdbcBatchItemWriter.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<>());
+        return jdbcBatchItemWriter;
+    }
+
+    @Bean
+    public ItemProcessor<Product, Product> transformMyProductItemProcessor(){
+        return new TransformMyProductItemProcessor();
+    }
+
+    @Bean
+    public ItemProcessor<Product, OSProduct> transformMyOSProductItemProcessor(){
+        return new TransformMyOSProductItemProcessor();
+    }
+
+    @Bean
+    public ItemProcessor<Product, Product> filterDataItemProcessor(){
+        return new FilterProductItemProcessor();
+    }
+
+    @Bean
+    public ValidatingItemProcessor<Product> validateItemProcessor(){
+        ValidatingItemProcessor<Product> validatingItemProcessor = new ValidatingItemProcessor<>(new ProductValidator());
+        validatingItemProcessor.setFilter(true);//If Validation fails then it will not fail Job only filters the record
+        return validatingItemProcessor;
+    }
+
+    @Bean
+    public BeanValidatingItemProcessor<Product> validateBeanItemProcessor(){
+        BeanValidatingItemProcessor<Product> beanValidatingItemProcessor = new BeanValidatingItemProcessor<>();
+        beanValidatingItemProcessor.setFilter(true);//If Validation fails then it will not fail Job only filters the record
+        return  beanValidatingItemProcessor;
+    }
+
+    @Bean
+    public CompositeItemProcessor<Product, OSProduct> compositeItemProcessor(){
+        CompositeItemProcessor<Product, OSProduct> compositeItemProcessor = new CompositeItemProcessor<>();
+
+        List itemProcessorList = new ArrayList<>();
+        //itemProcessorList.add(validateItemProcessor());
+        itemProcessorList.add(filterDataItemProcessor());
+        itemProcessorList.add(transformMyOSProductItemProcessor());
+
+        compositeItemProcessor.setDelegates(itemProcessorList);
+        return compositeItemProcessor;
+    }
+
     //Sequential Flow Job
     @Bean
     public Job firstJob(JobRepository jobRepository, PlatformTransactionManager transactionManager, Step firstStep){
@@ -164,9 +219,10 @@ public class SpringBatchConfig {
     @Qualifier("firstStep")
     public Step firstStep(JobRepository jobRepository, PlatformTransactionManager transactionManager){
         return new StepBuilder("Step1", jobRepository)
-                .<Product, Product>chunk(2, transactionManager)
+                .<Product, OSProduct>chunk(2, transactionManager)
                 .reader(jdbcCursorItemReader())
-                .writer(jdbcBatchItemWriter())
+                .processor(compositeItemProcessor())
+                .writer(jdbcBatchItemWriter_osproduct())
                 .build();
     }
 }

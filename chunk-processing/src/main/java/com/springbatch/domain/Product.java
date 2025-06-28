@@ -1,10 +1,17 @@
 package com.springbatch.domain;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
+
 public class Product {
 
     private Integer productId;
     private String productName;
+
+    @Pattern(regexp = "Mobile | tablet")
     private String productCategory;
+
+    @Min(1500)
     private Integer productPrice;
 
     public Integer getProductId() {
